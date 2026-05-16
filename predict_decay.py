@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import os
 
-# Normalization constants — set by the notebook after training (10 values each).
-MEANS = [None]  # 10 floats
-STDS  = [None]  # 10 floats
+_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class OrbitalMLP(nn.Module):
@@ -41,16 +40,17 @@ def predict(parameters):
 
     x10 = torch.cat([p, area_to_mass, log_altitude, log_area_to_mass, log_solar], dim=1)
 
-    means = torch.tensor(MEANS, dtype=torch.float32).to(device)
-    stds  = torch.tensor(STDS,  dtype=torch.float32).to(device)
+    checkpoint = torch.load(os.path.join(_DIR, "weights.pkl"), map_location=device)
+    means = torch.tensor(checkpoint["means"], dtype=torch.float32).to(device)
+    stds  = torch.tensor(checkpoint["stds"],  dtype=torch.float32).to(device)
     x10 = (x10 - means) / stds
 
-    model = OrbitalMLP().to(device)
-    model.load_state_dict(torch.load("weights.pkl", map_location=device))
-    model.eval()
+    preds = []
+    for state_f16 in checkpoint["models"]:
+        m = OrbitalMLP().to(device)
+        m.load_state_dict({k: v.float() for k, v in state_f16.items()})
+        m.eval()
+        with torch.no_grad():
+            preds.append(torch.expm1(m(x10)))
 
-    with torch.no_grad():
-        log_pred = model(x10)
-        pred = torch.expm1(log_pred)
-
-    return pred
+    return torch.stack(preds).mean(0)
