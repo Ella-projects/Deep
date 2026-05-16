@@ -7,21 +7,34 @@ MEANS = [None]  # 10 floats
 STDS  = [None]  # 10 floats
 
 
-class OrbitalMLP(nn.Module):
-    def __init__(self):
+class _ResBlock(nn.Module):
+    def __init__(self, d):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(10, 128),  nn.BatchNorm1d(128),  nn.ReLU(),
-            nn.Linear(128, 256), nn.BatchNorm1d(256),  nn.ReLU(),
+        self.block = nn.Sequential(
+            nn.Linear(d, d), nn.BatchNorm1d(d), nn.ReLU(),
+            nn.Linear(d, d), nn.BatchNorm1d(d),
+        )
+        self.act = nn.ReLU()
+
+    def forward(self, x):
+        return self.act(self.block(x) + x)
+
+
+class OrbitalMLP(nn.Module):
+    def __init__(self, d=128):
+        super().__init__()
+        self.inp = nn.Sequential(nn.Linear(10, d), nn.BatchNorm1d(d), nn.ReLU())
+        self.res = nn.Sequential(
+            _ResBlock(d), _ResBlock(d), _ResBlock(d), _ResBlock(d), _ResBlock(d)
+        )
+        self.head = nn.Sequential(
             nn.Dropout(0.05),
-            nn.Linear(256, 256), nn.BatchNorm1d(256),  nn.ReLU(),
-            nn.Linear(256, 128), nn.BatchNorm1d(128),  nn.ReLU(),
-            nn.Linear(128, 64),  nn.ReLU(),
+            nn.Linear(d, 64), nn.ReLU(),
             nn.Linear(64, 1),
         )
 
     def forward(self, x):
-        return self.net(x)
+        return self.head(self.res(self.inp(x)))
 
 
 def predict(parameters):
